@@ -1,0 +1,69 @@
+poll_interval: 10s
+
+mock:
+  # true  = keyword rules only, no Bedrock calls (free, instant)
+  # false = uses real AWS Bedrock with your ~/.aws credentials
+  use_rule_classifier: true
+
+aws:
+  region: us-east-1
+  bedrock_model: amazon.nova-micro-v1:0
+
+  # ministack local SQS — run: docker compose up -d
+  # create the queue first: aws --endpoint-url=http://localhost:4566 sqs create-queue --queue-name log-sentinel
+  endpoint_url: http://localhost:4566
+  sqs_queue_url: http://localhost:4566/000000000000/log-sentinel
+
+applications:
+  - name: payments-api
+    source: mock
+    poll_interval: 8s
+
+  - name: inventory-service
+    source: mock
+    poll_interval: 12s
+
+  - name: auth-gateway
+    source: mock
+    poll_interval: 15s
+
+workers:
+  - app: payments-api
+    concurrency: 1
+    actions:
+      # Demo: log the ticket to a file — replace with webhook or cli_agent
+      - type: cli_agent
+        name: echo-ticket
+        command: sh
+        args: ["-c", "echo \"[$(date)] WORKER GOT TICKET: $1\" >> /tmp/log-sentinel-workers.log", "--"]
+        prompt_mode: arg
+        timeout: 5s
+
+  - app: inventory-service
+    concurrency: 1
+    actions:
+      - type: cli_agent
+        name: echo-ticket
+        command: sh
+        args: ["-c", "echo \"[$(date)] WORKER GOT TICKET: $1\" >> /tmp/log-sentinel-workers.log", "--"]
+        prompt_mode: arg
+        timeout: 5s
+
+  - app: auth-gateway
+    concurrency: 1
+    actions:
+      - type: cli_agent
+        name: echo-ticket
+        command: sh
+        args: ["-c", "echo \"[$(date)] WORKER GOT TICKET: $1\" >> /tmp/log-sentinel-workers.log", "--"]
+        prompt_mode: arg
+        timeout: 5s
+
+# To use Claude Code as the agent, replace the action above with:
+#   - type: cli_agent
+#     name: claude-debug
+#     command: claude
+#     args: ["--print", "--dangerously-skip-permissions"]
+#     prompt_mode: arg
+#     working_dir: /path/to/your/repo
+#     timeout: 300s

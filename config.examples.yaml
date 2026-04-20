@@ -1,7 +1,7 @@
 poll_interval: 20s
 
 mock:
-  use_rule_classifier: true
+  use_rule_classifier: false
 
 aws:
   region: us-east-1

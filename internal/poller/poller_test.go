@@ -3,6 +3,7 @@ package poller
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -135,7 +136,7 @@ func TestPoll_newErrorLog_createsTicketAndPublishes(t *testing.T) {
 	db := newFakeStore()
 	channels, _, ticketCh, _ := makeChannels()
 
-	p := New(makeApp("test-app"), src, cls, pub, db, channels)
+	p := New(makeApp("test-app"), src, cls, pub, db, channels, &atomic.Bool{})
 	p.poll(context.Background())
 
 	if len(pub.published) != 1 {
@@ -158,7 +159,7 @@ func TestPoll_duplicateLog_doesNotRepublish(t *testing.T) {
 	db := newFakeStore()
 	channels, _, _, _ := makeChannels()
 
-	p := New(makeApp("test-app"), src, cls, pub, db, channels)
+	p := New(makeApp("test-app"), src, cls, pub, db, channels, &atomic.Bool{})
 	p.poll(context.Background())
 	p.poll(context.Background())
 
@@ -180,7 +181,7 @@ func TestPoll_multipleDistinctErrors_createsMultipleTickets(t *testing.T) {
 	channels, _, ticketCh, _ := makeChannels()
 
 	callCount := 0
-	p := New(makeApp("test-app"), src, &multiClassifier{fps: fps, count: &callCount}, pub, db, channels)
+	p := New(makeApp("test-app"), src, &multiClassifier{fps: fps, count: &callCount}, pub, db, channels, &atomic.Bool{})
 	p.poll(context.Background())
 
 	if len(pub.published) != 2 {
@@ -216,7 +217,7 @@ func TestPoll_classifierError_skipsTicket(t *testing.T) {
 	db := newFakeStore()
 	channels, _, ticketCh, _ := makeChannels()
 
-	p := New(makeApp("test-app"), src, cls, pub, db, channels)
+	p := New(makeApp("test-app"), src, cls, pub, db, channels, &atomic.Bool{})
 	p.poll(context.Background())
 
 	if len(pub.published) != 0 {
@@ -236,7 +237,7 @@ func TestPoll_sqsError_marksTicketPending(t *testing.T) {
 	db := newFakeStore()
 	channels, _, _, _ := makeChannels()
 
-	p := New(makeApp("test-app"), src, cls, pub, db, channels)
+	p := New(makeApp("test-app"), src, cls, pub, db, channels, &atomic.Bool{})
 	p.poll(context.Background())
 
 	// Ticket should still be in the store
@@ -258,7 +259,7 @@ func TestPoll_fetchError_sendsErrorStatus(t *testing.T) {
 	db := newFakeStore()
 	channels, _, _, statusCh := makeChannels()
 
-	p := New(makeApp("test-app"), src, cls, pub, db, channels)
+	p := New(makeApp("test-app"), src, cls, pub, db, channels, &atomic.Bool{})
 	p.poll(context.Background())
 
 	if cls.calls != 0 {
@@ -285,7 +286,7 @@ func TestPoll_noLogs_publishesNothing(t *testing.T) {
 	db := newFakeStore()
 	channels, _, ticketCh, _ := makeChannels()
 
-	p := New(makeApp("test-app"), src, cls, pub, db, channels)
+	p := New(makeApp("test-app"), src, cls, pub, db, channels, &atomic.Bool{})
 	p.poll(context.Background())
 
 	if cls.calls != 0 {
@@ -308,7 +309,7 @@ func TestPoll_logsAreSentToLogChannel(t *testing.T) {
 	db := newFakeStore()
 	channels, logCh, _, _ := makeChannels()
 
-	p := New(makeApp("test-app"), src, cls, pub, db, channels)
+	p := New(makeApp("test-app"), src, cls, pub, db, channels, &atomic.Bool{})
 	p.poll(context.Background())
 
 	if len(logCh) != 2 {

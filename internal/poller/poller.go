@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/log-sentinel/sentinel/internal/classifier"
@@ -57,6 +58,7 @@ type Poller struct {
 	db         TicketStore
 	channels   Channels
 	logger     *slog.Logger
+	paused     *atomic.Bool
 }
 
 func New(
@@ -66,6 +68,7 @@ func New(
 	pub Publisher,
 	db TicketStore,
 	channels Channels,
+	paused *atomic.Bool,
 ) *Poller {
 	return &Poller{
 		app:        app,
@@ -75,6 +78,7 @@ func New(
 		db:         db,
 		channels:   channels,
 		logger:     slog.Default().With("app", app.Name, "source", app.Source),
+		paused:     paused,
 	}
 }
 
@@ -85,7 +89,9 @@ func (p *Poller) Run(ctx context.Context) {
 	}
 
 	p.logger.Info("starting poller", "interval", interval)
-	p.poll(ctx)
+	if !p.paused.Load() {
+		p.poll(ctx)
+	}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -96,6 +102,9 @@ func (p *Poller) Run(ctx context.Context) {
 			p.logger.Info("poller stopping due to context cancellation")
 			return
 		case <-ticker.C:
+			if p.paused.Load() {
+				continue
+			}
 			p.poll(ctx)
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -100,11 +101,17 @@ func main() {
 		appNames[i] = app.Name
 	}
 
+	pollersPaused := &atomic.Bool{}
+	workersPaused := &atomic.Bool{}
+
+	var sqsStatsCh chan queue.QueueStats
 	workerEventCh := make(chan worker.Event, 200)
 	if len(cfg.Workers) > 0 && !cfg.IsMockQueue() {
+		sqsStatsCh = make(chan queue.QueueStats, 10)
+		go queue.NewStatsWatcher(awsCfg, cfg.AWS.SQSQueueURL, sqsStatsCh).Run(ctx)
 		sqsClient := sqs.NewFromConfig(awsCfg)
 		for _, wCfg := range cfg.Workers {
-			w, err := worker.New(wCfg, cfg.AWS.SQSQueueURL, sqsClient, db, workerEventCh)
+			w, err := worker.New(wCfg, cfg.AWS.SQSQueueURL, sqsClient, db, workerEventCh, workersPaused)
 			if err != nil {
 				slog.Error("building worker", "app", wCfg.App, "error", err)
 				continue
@@ -122,16 +129,19 @@ func main() {
 			continue
 		}
 
-		p := poller.New(appCfg, src, cls, pub, db, pollerChans)
+		p := poller.New(appCfg, src, cls, pub, db, pollerChans, pollersPaused)
 		go p.Run(ctx)
 	}
 
 	tuiChannels := tui.Channels{
-		LogCh:        logCh,
-		TicketCh:     ticketCh,
-		StatusCh:     statusCh,
-		WorkerEvCh:   workerEventCh,
+		LogCh:         logCh,
+		TicketCh:      ticketCh,
+		StatusCh:      statusCh,
+		WorkerEvCh:    workerEventCh,
 		SentinelLogCh: sentinelLogCh,
+		SQSStatsCh:    sqsStatsCh,
+		PollersPaused: pollersPaused,
+		WorkersPaused: workersPaused,
 	}
 
 	m := tui.New(ctx, cancel, appNames, tuiChannels)

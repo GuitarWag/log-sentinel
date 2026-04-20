@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -278,6 +279,7 @@ func TestWorker_processesTicketAndAcks(t *testing.T) {
 		sqsFake,
 		nil,
 		nil,
+		&atomic.Bool{},
 	)
 	if err != nil {
 		t.Fatalf("building worker: %v", err)
@@ -316,6 +318,7 @@ func TestWorker_actionFailure_doesNotAck(t *testing.T) {
 		sqsFake,
 		nil,
 		nil,
+		&atomic.Bool{},
 	)
 	if err != nil {
 		t.Fatalf("building worker: %v", err)
@@ -341,6 +344,7 @@ func TestWorker_malformedMessage_discarded(t *testing.T) {
 		sqsFake,
 		nil,
 		nil,
+		&atomic.Bool{},
 	)
 
 	ctx := context.Background()

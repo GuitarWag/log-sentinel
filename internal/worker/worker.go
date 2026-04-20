@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -50,9 +51,10 @@ type Worker struct {
 	actions  []Action
 	eventCh  chan<- Event
 	logger   *slog.Logger
+	paused   *atomic.Bool
 }
 
-func New(cfg config.WorkerConfig, queueURL string, sqsClient SQSClient, db TicketStore, eventCh chan<- Event) (*Worker, error) {
+func New(cfg config.WorkerConfig, queueURL string, sqsClient SQSClient, db TicketStore, eventCh chan<- Event, paused *atomic.Bool) (*Worker, error) {
 	actions := make([]Action, 0, len(cfg.Actions))
 	for i, ac := range cfg.Actions {
 		a, err := BuildAction(ac)
@@ -70,6 +72,7 @@ func New(cfg config.WorkerConfig, queueURL string, sqsClient SQSClient, db Ticke
 		actions:  actions,
 		eventCh:  eventCh,
 		logger:   slog.Default().With("worker", cfg.App),
+		paused:   paused,
 	}, nil
 }
 
@@ -97,6 +100,15 @@ func (w *Worker) loop(ctx context.Context, goroutineID int) {
 	for {
 		if ctx.Err() != nil {
 			return
+		}
+
+		if w.paused.Load() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
+			continue
 		}
 
 		out, err := w.sqs.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{

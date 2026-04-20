@@ -128,6 +128,12 @@ func renderHeaderBar(m Model) string {
 	active := m.statsActive()
 	done := m.statsDone()
 	stats := fmt.Sprintf("Open:%d  Active:%d  Done:%d", open, active, done)
+	if m.pollersPaused != nil && m.pollersPaused.Load() {
+		stats += "  " + styleSeverityMedium.Render("[POLLERS PAUSED]")
+	}
+	if m.workersPaused != nil && m.workersPaused.Load() {
+		stats += "  " + styleSeverityMedium.Render("[WORKERS PAUSED]")
+	}
 
 	titlePart := title
 	gap := m.width - lipgloss.Width(titlePart) - lipgloss.Width(stats) - 2
@@ -168,7 +174,7 @@ func renderFooterBar(m Model) string {
 	var help string
 	switch m.activeTab {
 	case 0:
-		help = "Tab/1-5: switch  q: quit"
+		help = "Tab/1-5: switch  p: pause pollers  w: pause workers  q: quit"
 	case 1:
 		help = "Tab/1-5: switch  ↑↓/jk: scroll  g/G: top/bottom  a: filter app  q: quit"
 	case 2:
@@ -178,7 +184,7 @@ func renderFooterBar(m Model) string {
 			help = "Tab/1-5: switch  ↑↓/jk: select  Enter: detail  f: status  a: app  s: sev  q: quit"
 		}
 	case 3:
-		help = "Tab/1-5: switch  ↑↓/jk: scroll  g/G: top/bottom  a: filter app  q: quit"
+		help = "Tab/1-5: switch  ↑↓/jk: scroll  g/G: top/bottom  a: filter app  p: pause pollers  w: pause workers  q: quit"
 	case 4:
 		help = "Tab/1-5: switch  ↑↓/jk: scroll  g/G: top/bottom  l: level  type to search  q: quit"
 	}
@@ -397,17 +403,25 @@ func renderWorkersTab(m Model, w, h int) string {
 		innerW = 1
 	}
 
+	sqsBar := renderSQSStats(m, innerW)
 	filterBar := renderWorkerFilterBar(m, innerW)
 
 	vp := m.workerVP
 	vp.Width = innerW
-	vp.Height = h - 6
+	vp.Height = h - 7
 	if vp.Height < 1 {
 		vp.Height = 1
 	}
 
-	content := filterBar + "\n" + vp.View()
+	content := sqsBar + "\n" + filterBar + "\n" + vp.View()
 	return stylePanelBorder.Width(innerW).Height(h - 2).Render(content)
+}
+
+func renderSQSStats(m Model, width int) string {
+	stats := m.sqsStats
+	queued := styleCount.Render(fmt.Sprintf("%d", stats.ApproxMessages))
+	inflight := styleTimestamp.Render(fmt.Sprintf("%d in-flight", stats.InFlight))
+	return styleFilterOff.Render("SQS: ") + queued + styleFilterOff.Render(" queued  ") + inflight
 }
 
 func renderWorkerFilterBar(m Model, width int) string {

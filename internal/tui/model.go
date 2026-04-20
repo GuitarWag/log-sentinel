@@ -4,11 +4,13 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/log-sentinel/sentinel/internal/poller"
+	"github.com/log-sentinel/sentinel/internal/queue"
 	"github.com/log-sentinel/sentinel/internal/sources"
 	"github.com/log-sentinel/sentinel/internal/store"
 	"github.com/log-sentinel/sentinel/internal/worker"
@@ -23,6 +25,7 @@ type logMsg struct{ poller.LogMsg }
 type statusMsg struct{ poller.AppStatusMsg }
 type workerEvMsg struct{ worker.Event }
 type sentinelLogMsg struct{ SentinelLogRecord }
+type sqsStatsMsg struct{ queue.QueueStats }
 
 type Model struct {
 	width  int
@@ -72,6 +75,11 @@ type Model struct {
 	statusCh      <-chan poller.AppStatusMsg
 	workerEvCh    <-chan worker.Event
 	sentinelLogCh <-chan SentinelLogRecord
+	sqsStatsCh    <-chan queue.QueueStats
+
+	pollersPaused *atomic.Bool
+	workersPaused *atomic.Bool
+	sqsStats      queue.QueueStats
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -89,6 +97,9 @@ type Channels struct {
 	StatusCh      <-chan poller.AppStatusMsg
 	WorkerEvCh    <-chan worker.Event
 	SentinelLogCh <-chan SentinelLogRecord
+	SQSStatsCh    <-chan queue.QueueStats
+	PollersPaused *atomic.Bool
+	WorkersPaused *atomic.Bool
 }
 
 func New(ctx context.Context, cancel context.CancelFunc, appNames []string, ch Channels) Model {
@@ -126,6 +137,9 @@ func New(ctx context.Context, cancel context.CancelFunc, appNames []string, ch C
 		statusCh:       ch.StatusCh,
 		workerEvCh:     ch.WorkerEvCh,
 		sentinelLogCh:  ch.SentinelLogCh,
+		sqsStatsCh:     ch.SQSStatsCh,
+		pollersPaused:  ch.PollersPaused,
+		workersPaused:  ch.WorkersPaused,
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -138,6 +152,7 @@ func (m Model) Init() tea.Cmd {
 		waitForStatus(m.ctx, m.statusCh),
 		waitForWorkerEvent(m.ctx, m.workerEvCh),
 		waitForSentinelLog(m.ctx, m.sentinelLogCh),
+		waitForSQSStats(m.ctx, m.sqsStatsCh),
 	)
 }
 
@@ -170,6 +185,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTab = (m.activeTab + 1) % 5
 		case "shift+tab":
 			m.activeTab = (m.activeTab + 4) % 5
+		case "p":
+			if m.activeTab != 4 && m.pollersPaused != nil {
+				m.pollersPaused.Store(!m.pollersPaused.Load())
+			}
+		case "w":
+			if m.activeTab != 4 && m.workersPaused != nil {
+				m.workersPaused.Store(!m.workersPaused.Load())
+			}
 		default:
 			switch m.activeTab {
 			case 1:
@@ -233,6 +256,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addSentinelLine(msg.SentinelLogRecord)
 		m.refreshSentinelVP()
 		cmds = append(cmds, waitForSentinelLog(m.ctx, m.sentinelLogCh))
+
+	case sqsStatsMsg:
+		m.sqsStats = msg.QueueStats
+		cmds = append(cmds, waitForSQSStats(m.ctx, m.sqsStatsCh))
 	}
 
 	if _, isKey := msg.(tea.KeyMsg); !isKey {
@@ -820,6 +847,23 @@ func waitForWorkerEvent(ctx context.Context, ch <-chan worker.Event) tea.Cmd {
 				return nil
 			}
 			return workerEvMsg{msg}
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+func waitForSQSStats(ctx context.Context, ch <-chan queue.QueueStats) tea.Cmd {
+	return func() tea.Msg {
+		if ch == nil {
+			return nil
+		}
+		select {
+		case s, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			return sqsStatsMsg{s}
 		case <-ctx.Done():
 			return nil
 		}

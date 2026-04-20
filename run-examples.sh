@@ -1,27 +1,25 @@
 #!/usr/bin/env bash
+#!/usr/bin/env bash
 set -e
 export PAGER=cat
 export GIT_PAGER=cat
 export AWS_PAGER=""
 
-AWS_CLI="aws --endpoint-url=http://localhost:4566"
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
-export AWS_DEFAULT_REGION=us-east-1
+LOCALSTACK_CLI="env AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 aws --endpoint-url=http://localhost:4566"
 
 echo "==> Resetting state..."
-rm -f log-sentinel-examples.db
+rm -f log-sentinel-examples.db log-sentinel-examples.db-wal log-sentinel-examples.db-shm
 git checkout examples/
 
 echo "==> Starting ministack..."
 docker compose up -d
 echo "==> Waiting for ministack to be ready..."
-until $AWS_CLI sqs list-queues &>/dev/null; do sleep 1; done
+until $LOCALSTACK_CLI sqs list-queues &>/dev/null; do sleep 1; done
 
 echo "==> Creating/purging SQS queue..."
-$AWS_CLI sqs create-queue --queue-name log-sentinel --output text --query 'QueueUrl' 2>/dev/null \
+$LOCALSTACK_CLI sqs create-queue --queue-name log-sentinel --output text --query 'QueueUrl' 2>/dev/null \
   || true
-$AWS_CLI sqs purge-queue --queue-url http://localhost:4566/000000000000/log-sentinel 2>/dev/null \
+$LOCALSTACK_CLI sqs purge-queue --queue-url http://localhost:4566/000000000000/log-sentinel 2>/dev/null \
   || true
 
 echo "==> Building..."

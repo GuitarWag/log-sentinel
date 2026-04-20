@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -80,6 +81,7 @@ type Classifier struct {
 }
 
 func NewClassifier(awsCfg aws.Config, model string) *Classifier {
+	awsCfg.BaseEndpoint = nil
 	client := bedrockruntime.NewFromConfig(awsCfg)
 	if model == "" {
 		model = "amazon.nova-micro-v1:0"
@@ -113,11 +115,21 @@ func (c *Classifier) Classify(ctx context.Context, appName, logLine string) (*Cl
 		return nil, fmt.Errorf("parsing Bedrock response: %w", err)
 	}
 
-	hashInput := appName + "|" + result.Fingerprint
-	sum := sha256.Sum256([]byte(hashInput))
-	result.FingerprintHash = fmt.Sprintf("%x", sum)
+	result.FingerprintHash = normalizedHash(appName, logLine)
 
 	return result, nil
+}
+
+var nonAlphaRe = regexp.MustCompile(`[^a-z0-9 ]+`)
+var multiSpaceRe = regexp.MustCompile(`\s+`)
+
+func normalizedHash(appName, logLine string) string {
+	normalized := strings.ToLower(logLine)
+	normalized = nonAlphaRe.ReplaceAllString(normalized, " ")
+	normalized = multiSpaceRe.ReplaceAllString(normalized, " ")
+	normalized = strings.TrimSpace(normalized)
+	sum := sha256.Sum256([]byte(appName + "|" + normalized))
+	return fmt.Sprintf("%x", sum)
 }
 
 func (c *Classifier) invokeNova(ctx context.Context, userMessage string) (string, error) {

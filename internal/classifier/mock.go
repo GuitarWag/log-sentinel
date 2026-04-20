@@ -2,8 +2,6 @@ package classifier
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
 	"strings"
 )
 
@@ -136,27 +134,23 @@ func (m *MockClassifier) Classify(_ context.Context, appName, logLine string) (*
 		for _, kw := range r.keywords {
 			if strings.Contains(lower, kw) {
 				result := &ClassificationResult{
-					Classification: r.classification,
-					Severity:       r.severity,
-					Component:      r.component,
-					Fingerprint:    r.fingerprint,
+					Classification:  r.classification,
+					Severity:        r.severity,
+					Component:       r.component,
+					Fingerprint:     r.fingerprint,
+					FingerprintHash: normalizedHash(appName, logLine),
 				}
-				hashInput := appName + "|" + result.Fingerprint
-				sum := sha256.Sum256([]byte(hashInput))
-				result.FingerprintHash = fmt.Sprintf("%x", sum)
 				return result, nil
 			}
 		}
 	}
 
 	result := &ClassificationResult{
-		Classification: "unknown_error",
-		Severity:       "medium",
-		Component:      "unknown",
-		Fingerprint:    "unclassified error",
+		Classification:  "unknown_error",
+		Severity:        "medium",
+		Component:       "unknown",
+		Fingerprint:     "unclassified error",
+		FingerprintHash: normalizedHash(appName, logLine),
 	}
-	hashInput := appName + "|" + result.Fingerprint
-	sum := sha256.Sum256([]byte(hashInput))
-	result.FingerprintHash = fmt.Sprintf("%x", sum)
 	return result, nil
 }

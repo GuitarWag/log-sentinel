@@ -35,7 +35,9 @@ func main() {
 	}
 	defer logFile.Close()
 
-	logger := slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	sentinelLogCh := make(chan tui.SentinelLogRecord, 500)
+	fileHandler := slog.NewTextHandler(logFile, &slog.HandlerOptions{Level: slog.LevelDebug})
+	logger := slog.New(tui.NewFanOutHandler(fileHandler, sentinelLogCh))
 	slog.SetDefault(logger)
 
 	cfg, err := appconfig.Load(*configPath)
@@ -125,10 +127,11 @@ func main() {
 	}
 
 	tuiChannels := tui.Channels{
-		LogCh:      logCh,
-		TicketCh:   ticketCh,
-		StatusCh:   statusCh,
-		WorkerEvCh: workerEventCh,
+		LogCh:        logCh,
+		TicketCh:     ticketCh,
+		StatusCh:     statusCh,
+		WorkerEvCh:   workerEventCh,
+		SentinelLogCh: sentinelLogCh,
 	}
 
 	m := tui.New(ctx, cancel, appNames, tuiChannels)

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -114,6 +115,8 @@ func RenderLayout(m Model) string {
 		content = renderTicketsTab(m, contentW, contentH)
 	case 3:
 		content = renderWorkersTab(m, contentW, contentH)
+	case 4:
+		content = renderSentinelTab(m, contentW, contentH)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, tabBar, content, footer)
@@ -142,6 +145,7 @@ func renderTabBar(m Model) string {
 		"[2] Logs",
 		fmt.Sprintf("[3] Tickets (%d)", ticketCount),
 		"[4] Workers",
+		"[5] Sentinel",
 	}
 
 	tabs := make([]string, len(labels))
@@ -164,17 +168,19 @@ func renderFooterBar(m Model) string {
 	var help string
 	switch m.activeTab {
 	case 0:
-		help = "Tab/1-4: switch  q: quit"
+		help = "Tab/1-5: switch  q: quit"
 	case 1:
-		help = "Tab/1-4: switch  ↑↓/jk: scroll  g/G: top/bottom  a: filter app  q: quit"
+		help = "Tab/1-5: switch  ↑↓/jk: scroll  g/G: top/bottom  a: filter app  q: quit"
 	case 2:
 		if m.showDetail {
 			help = "↑↓/jk: scroll  Esc: back  q: quit"
 		} else {
-			help = "Tab/1-4: switch  ↑↓/jk: select  Enter: detail  f: status  a: app  s: sev  q: quit"
+			help = "Tab/1-5: switch  ↑↓/jk: select  Enter: detail  f: status  a: app  s: sev  q: quit"
 		}
 	case 3:
-		help = "Tab/1-4: switch  ↑↓/jk: scroll  g/G: top/bottom  a: filter app  q: quit"
+		help = "Tab/1-5: switch  ↑↓/jk: scroll  g/G: top/bottom  a: filter app  q: quit"
+	case 4:
+		help = "Tab/1-5: switch  ↑↓/jk: scroll  g/G: top/bottom  l: level  type to search  q: quit"
 	}
 	return styleFooter.Width(m.width).Render(help)
 }
@@ -534,4 +540,82 @@ func formatRelativeTime(t time.Time) string {
 	default:
 		return t.Format("Jan 2")
 	}
+}
+
+func renderSentinelTab(m Model, w, h int) string {
+	innerW := w - 4
+	if innerW < 1 {
+		innerW = 1
+	}
+	vp := m.sentinelVP
+	vp.Width = innerW
+	vp.Height = h - 6
+	if vp.Height < 1 {
+		vp.Height = 1
+	}
+	filterBar := renderSentinelFilterBar(m, innerW)
+	content := filterBar + "\n" + vp.View()
+	return stylePanelBorder.Width(innerW).Height(h - 2).Render(content)
+}
+
+func renderSentinelFilterBar(m Model, width int) string {
+	levelLabel := "all"
+	if m.sentinelLevelFilter != "" {
+		levelLabel = m.sentinelLevelFilter
+	}
+	filtered := m.filteredSentinelLines()
+	total := len(m.sentinelLines)
+	counts := styleTimestamp.Render(fmt.Sprintf("%d/%d", len(filtered), total))
+	searchPart := styleFilterOff.Render("  /search: ")
+	if m.sentinelSearch != "" {
+		searchPart += styleFilterOn.Render(m.sentinelSearch)
+	} else {
+		searchPart += styleTimestamp.Render("─")
+	}
+	return styleFilterOff.Render("[l] Level: ") + styleFilterOn.Render(levelLabel) + searchPart + "  " + counts
+}
+
+func renderSentinelLine(r SentinelLogRecord) string {
+	ts := styleTimestamp.Render(r.Time.Format("15:04:05"))
+	var levelStyle lipgloss.Style
+	switch r.Level {
+	case slog.LevelError:
+		levelStyle = styleSeverityHigh
+	case slog.LevelWarn:
+		levelStyle = styleSeverityMedium
+	case slog.LevelDebug:
+		levelStyle = styleTimestamp
+	default:
+		levelStyle = styleStatusIdle
+	}
+	level := levelStyle.Render(fmt.Sprintf("%-5s", r.Level.String()))
+	component := sentinelComponent(r.Attrs)
+	compBadge := ""
+	if component != "" {
+		compBadge = " " + styleAppName.Render("["+truncate(component, 12)+"]")
+	}
+	var attrs strings.Builder
+	for _, a := range r.Attrs {
+		if a.Key == "worker" || a.Key == "app" || a.Key == "source" || a.Key == "goroutine" {
+			continue
+		}
+		attrs.WriteString("  ")
+		attrs.WriteString(styleTimestamp.Render(a.Key + "="))
+		attrs.WriteString(truncate(a.Value.String(), 50))
+	}
+	return fmt.Sprintf("%s %s%s %s%s", ts, level, compBadge, r.Message, attrs.String())
+}
+
+func sentinelComponent(attrs []slog.Attr) string {
+	for _, a := range attrs {
+		switch a.Key {
+		case "worker":
+			return "worker:" + a.Value.String()
+		case "app":
+			return a.Value.String()
+		case "source":
+			return "src:" + a.Value.String()
+		}
+	}
+	return ""
 }

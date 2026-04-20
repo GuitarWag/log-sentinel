@@ -16,11 +16,13 @@ import (
 
 const maxLogLines = 200
 const maxWorkerEvents = 200
+const maxSentinelLines = 500
 
 type tickMsg struct{ poller.TicketMsg }
 type logMsg struct{ poller.LogMsg }
 type statusMsg struct{ poller.AppStatusMsg }
 type workerEvMsg struct{ worker.Event }
+type sentinelLogMsg struct{ SentinelLogRecord }
 
 type Model struct {
 	width  int
@@ -58,11 +60,18 @@ type Model struct {
 	logVP    viewport.Model
 	workerVP viewport.Model
 	detailVP viewport.Model
+	sentinelVP viewport.Model
 
-	logCh      <-chan poller.LogMsg
-	ticketCh   <-chan poller.TicketMsg
-	statusCh   <-chan poller.AppStatusMsg
-	workerEvCh <-chan worker.Event
+	sentinelLines       []SentinelLogRecord
+	sentinelLevelFilter string
+	sentinelLevelIdx    int
+	sentinelSearch      string
+
+	logCh         <-chan poller.LogMsg
+	ticketCh      <-chan poller.TicketMsg
+	statusCh      <-chan poller.AppStatusMsg
+	workerEvCh    <-chan worker.Event
+	sentinelLogCh <-chan SentinelLogRecord
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -75,24 +84,28 @@ type appStatus struct {
 }
 
 type Channels struct {
-	LogCh      <-chan poller.LogMsg
-	TicketCh   <-chan poller.TicketMsg
-	StatusCh   <-chan poller.AppStatusMsg
-	WorkerEvCh <-chan worker.Event
+	LogCh         <-chan poller.LogMsg
+	TicketCh      <-chan poller.TicketMsg
+	StatusCh      <-chan poller.AppStatusMsg
+	WorkerEvCh    <-chan worker.Event
+	SentinelLogCh <-chan SentinelLogRecord
 }
 
 func New(ctx context.Context, cancel context.CancelFunc, appNames []string, ch Channels) Model {
 	lv := viewport.New(80, 20)
 	wv := viewport.New(80, 20)
 	dv := viewport.New(80, 20)
+	sv := viewport.New(80, 20)
 
 	lv.Style = lipgloss.NewStyle()
 	wv.Style = lipgloss.NewStyle()
 	dv.Style = lipgloss.NewStyle()
+	sv.Style = lipgloss.NewStyle()
 
 	lv.KeyMap = viewport.KeyMap{}
 	wv.KeyMap = viewport.KeyMap{}
 	dv.KeyMap = viewport.KeyMap{}
+	sv.KeyMap = viewport.KeyMap{}
 
 	statuses := make(map[string]*appStatus, len(appNames))
 	for _, name := range appNames {
@@ -107,10 +120,12 @@ func New(ctx context.Context, cancel context.CancelFunc, appNames []string, ch C
 		logVP:          lv,
 		workerVP:       wv,
 		detailVP:       dv,
+		sentinelVP:     sv,
 		logCh:          ch.LogCh,
 		ticketCh:       ch.TicketCh,
 		statusCh:       ch.StatusCh,
 		workerEvCh:     ch.WorkerEvCh,
+		sentinelLogCh:  ch.SentinelLogCh,
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -122,6 +137,7 @@ func (m Model) Init() tea.Cmd {
 		waitForTicket(m.ctx, m.ticketCh),
 		waitForStatus(m.ctx, m.statusCh),
 		waitForWorkerEvent(m.ctx, m.workerEvCh),
+		waitForSentinelLog(m.ctx, m.sentinelLogCh),
 	)
 }
 
@@ -148,10 +164,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTab = 2
 		case "4":
 			m.activeTab = 3
+		case "5":
+			m.activeTab = 4
 		case "tab":
-			m.activeTab = (m.activeTab + 1) % 4
+			m.activeTab = (m.activeTab + 1) % 5
 		case "shift+tab":
-			m.activeTab = (m.activeTab + 3) % 4
+			m.activeTab = (m.activeTab + 4) % 5
 		default:
 			switch m.activeTab {
 			case 1:
@@ -160,6 +178,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.handleTicketsKey(key)
 			case 3:
 				m.handleWorkersKey(key)
+			case 4:
+				m.handleSentinelKey(key)
 			}
 		}
 
@@ -208,6 +228,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		cmds = append(cmds, waitForWorkerEvent(m.ctx, m.workerEvCh))
+
+	case sentinelLogMsg:
+		m.addSentinelLine(msg.SentinelLogRecord)
+		m.refreshSentinelVP()
+		cmds = append(cmds, waitForSentinelLog(m.ctx, m.sentinelLogCh))
 	}
 
 	if _, isKey := msg.(tea.KeyMsg); !isKey {
@@ -217,6 +242,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.workerVP, cmd = m.workerVP.Update(msg)
 		cmds = append(cmds, cmd)
 		m.detailVP, cmd = m.detailVP.Update(msg)
+		cmds = append(cmds, cmd)
+		m.sentinelVP, cmd = m.sentinelVP.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
@@ -444,6 +471,8 @@ func (m *Model) recalcSizes() {
 	m.logVP.Height = vpH
 	m.workerVP.Width = vpW
 	m.workerVP.Height = vpH
+	m.sentinelVP.Width = vpW
+	m.sentinelVP.Height = vpH
 	m.detailVP.Width = vpW - 2
 	m.detailVP.Height = vpH - 2
 	if m.detailVP.Width < 1 {
@@ -641,6 +670,101 @@ func (m Model) statsDone() int {
 
 func itoa(n int64) string {
 	return strconv.FormatInt(n, 10)
+}
+
+func (m *Model) handleSentinelKey(key string) {
+	switch key {
+	case "up", "k":
+		m.sentinelVP.LineUp(1)
+	case "down", "j":
+		m.sentinelVP.LineDown(1)
+	case "g":
+		m.sentinelVP.GotoTop()
+	case "G":
+		m.sentinelVP.GotoBottom()
+	case "l":
+		m.cycleSentinelLevelFilter()
+		m.refreshSentinelVP()
+	case "/":
+		m.sentinelSearch = ""
+		m.refreshSentinelVP()
+	case "backspace":
+		if len(m.sentinelSearch) > 0 {
+			m.sentinelSearch = m.sentinelSearch[:len(m.sentinelSearch)-1]
+			m.refreshSentinelVP()
+		}
+	default:
+		if len(key) == 1 && key[0] >= 32 && key[0] < 127 {
+			m.sentinelSearch += key
+			m.refreshSentinelVP()
+		}
+	}
+}
+
+func (m *Model) cycleSentinelLevelFilter() {
+	options := []string{"", "DEBUG", "INFO", "WARN", "ERROR"}
+	m.sentinelLevelIdx = (m.sentinelLevelIdx + 1) % len(options)
+	m.sentinelLevelFilter = options[m.sentinelLevelIdx]
+}
+
+func (m *Model) filteredSentinelLines() []SentinelLogRecord {
+	result := make([]SentinelLogRecord, 0, len(m.sentinelLines))
+	search := strings.ToLower(m.sentinelSearch)
+	for _, r := range m.sentinelLines {
+		if m.sentinelLevelFilter != "" && r.Level.String() != m.sentinelLevelFilter {
+			continue
+		}
+		if search != "" {
+			haystack := strings.ToLower(r.Message)
+			for _, a := range r.Attrs {
+				haystack += " " + strings.ToLower(a.Key) + "=" + strings.ToLower(a.Value.String())
+			}
+			if !strings.Contains(haystack, search) {
+				continue
+			}
+		}
+		result = append(result, r)
+	}
+	return result
+}
+
+func (m *Model) addSentinelLine(r SentinelLogRecord) {
+	m.sentinelLines = append(m.sentinelLines, r)
+	if len(m.sentinelLines) > maxSentinelLines {
+		m.sentinelLines = m.sentinelLines[len(m.sentinelLines)-maxSentinelLines:]
+	}
+}
+
+func (m *Model) refreshSentinelVP() {
+	filtered := m.filteredSentinelLines()
+	if len(filtered) == 0 {
+		m.sentinelVP.SetContent(styleTimestamp.Render("No internal logs match current filters..."))
+		return
+	}
+	var sb strings.Builder
+	for _, r := range filtered {
+		sb.WriteString(renderSentinelLine(r))
+		sb.WriteString("\n")
+	}
+	m.sentinelVP.SetContent(sb.String())
+	m.sentinelVP.GotoBottom()
+}
+
+func waitForSentinelLog(ctx context.Context, ch <-chan SentinelLogRecord) tea.Cmd {
+	return func() tea.Msg {
+		if ch == nil {
+			return nil
+		}
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			return sentinelLogMsg{msg}
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 func waitForLog(ctx context.Context, ch <-chan poller.LogMsg) tea.Cmd {

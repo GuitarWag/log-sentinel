@@ -1,5 +1,6 @@
 # Binary
 /log-sentinel
+/sentinel
 /tmp/log-sentinel
 
 # SQLite

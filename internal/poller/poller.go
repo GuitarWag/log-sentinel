@@ -137,7 +137,11 @@ func (p *Poller) poll(ctx context.Context) {
 		default:
 		}
 
-		result, err := p.classifier.Classify(ctx, p.app.Name, entry.RawLine)
+		classifyLine := entry.RawLine
+		if entry.DedupeKey != "" {
+			classifyLine = entry.DedupeKey
+		}
+		result, err := p.classifier.Classify(ctx, p.app.Name, classifyLine)
 		if err != nil {
 			p.logger.Error("classification failed", "error", err, "log", entry.RawLine[:min(len(entry.RawLine), 100)])
 			continue

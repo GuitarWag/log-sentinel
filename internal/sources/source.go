@@ -11,6 +11,7 @@ type LogEntry struct {
 	Severity  string
 	Message   string
 	RawLine   string
+	DedupeKey string
 }
 
 type LogSource interface {

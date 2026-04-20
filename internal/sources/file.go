@@ -66,6 +66,7 @@ func (s *FileSource) FetchSince(_ context.Context, _ time.Time) ([]LogEntry, err
 			Severity:  severity,
 			Message:   message,
 			RawLine:   fmt.Sprintf("[%s] %s %s", ts.Format(time.RFC3339), severity, message),
+			DedupeKey: raw,
 		})
 	}
 

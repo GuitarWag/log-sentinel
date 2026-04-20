@@ -3,7 +3,7 @@
 A terminal UI that watches your application logs, classifies errors with an LLM, deduplicates them into tickets, and dispatches workers to investigate and fix them automatically.
 
 ```
-┌─ Log Sentinel ──────────────────────────────── Open:3  Active:1  Done:7 ─┐
+┌─ Log Sentinel ── Open:3  Active:1  Done:7  ⏵ Pollers  ⏵ Workers ────────┐
 │ [1] Overview  [2] Logs  [3] Tickets (11)  [4] Workers  [5] Sentinel       │
 ├────────────────────────────────────────────────────────────────────────────┤
 │ [f] Status: All   [a] App: all   [s] Sev: all                              │
@@ -71,6 +71,8 @@ No AWS account needed. Uses ministack for local SQS and a rule-based classifier 
 | `f` | Cycle status filter (Tickets tab) |
 | `a` | Cycle app filter |
 | `s` | Cycle severity filter (Tickets tab) |
+| `p` | Pause / resume pollers (all tabs except Sentinel) |
+| `w` | Pause / resume workers (all tabs except Sentinel) |
 | `l` | Cycle level filter (Sentinel tab) |
 | type text | Search/filter (Sentinel tab) |
 | `/` | Clear search (Sentinel tab) |
@@ -83,7 +85,7 @@ No AWS account needed. Uses ministack for local SQS and a rule-based classifier 
 | **Overview** | Per-app poller status + ticket statistics |
 | **Logs** | Raw log stream, filterable by app |
 | **Tickets** | Deduplicated error tickets; Enter opens detail with worker output |
-| **Workers** | Worker event stream showing action progress |
+| **Workers** | Worker event stream + SQS queue depth (queued / in-flight), polled every 10s |
 | **Sentinel** | Internal slog records with component badges, level filter, and text search |
 
 ## Configuration

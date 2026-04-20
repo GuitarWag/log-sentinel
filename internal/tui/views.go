@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -124,24 +125,32 @@ func RenderLayout(m Model) string {
 
 func renderHeaderBar(m Model) string {
 	title := "Log Sentinel"
+
 	open := m.statsOpen()
 	active := m.statsActive()
 	done := m.statsDone()
-	stats := fmt.Sprintf("Open:%d  Active:%d  Done:%d", open, active, done)
-	if m.pollersPaused != nil && m.pollersPaused.Load() {
-		stats += "  " + styleSeverityMedium.Render("[POLLERS PAUSED]")
-	}
-	if m.workersPaused != nil && m.workersPaused.Load() {
-		stats += "  " + styleSeverityMedium.Render("[WORKERS PAUSED]")
-	}
+	ticketStats := fmt.Sprintf("Open:%d  Active:%d  Done:%d", open, active, done)
 
-	titlePart := title
-	gap := m.width - lipgloss.Width(titlePart) - lipgloss.Width(stats) - 2
+	pollerCtl := renderPauseControl("Pollers", m.pollersPaused)
+	workerCtl := renderPauseControl("Workers", m.workersPaused)
+	right := ticketStats + "  " + pollerCtl + "  " + workerCtl
+
+	gap := m.width - lipgloss.Width(title) - lipgloss.Width(right) - 2
 	if gap < 1 {
 		gap = 1
 	}
-	line := titlePart + strings.Repeat(" ", gap) + stats
+	line := title + strings.Repeat(" ", gap) + right
 	return styleHeaderBar.Width(m.width).Render(line)
+}
+
+func renderPauseControl(label string, paused *atomic.Bool) string {
+	if paused == nil {
+		return ""
+	}
+	if paused.Load() {
+		return styleSeverityMedium.Render("⏸ " + label)
+	}
+	return styleStatusIdle.Render("⏵ " + label)
 }
 
 func renderTabBar(m Model) string {

@@ -159,6 +159,13 @@ func buildSource(ctx context.Context, appCfg appconfig.AppConfig, awsCfg aws.Con
 	case "mock":
 		return sources.NewMockSource(appCfg.Name, appCfg.PollInterval.Duration), nil
 
+	case "file":
+		src, err := sources.NewFileSource(appCfg.Name, appCfg.LogFile)
+		if err != nil {
+			return nil, fmt.Errorf("creating file source for %q: %w", appCfg.Name, err)
+		}
+		return src, nil
+
 	default:
 		return nil, fmt.Errorf("unknown source type %q", appCfg.Source)
 	}

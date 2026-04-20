@@ -92,7 +92,7 @@ func TestWebhookAction_success(t *testing.T) {
 	}
 
 	ticket := sampleTicket("my-api")
-	if err := action.Run(context.Background(), ticket); err != nil {
+	if _, err := action.Run(context.Background(), ticket); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestWebhookAction_non2xx_returnsError(t *testing.T) {
 		timeout: 5 * time.Second,
 	}
 
-	if err := action.Run(context.Background(), sampleTicket("app")); err == nil {
+	if _, err := action.Run(context.Background(), sampleTicket("app")); err == nil {
 		t.Error("expected error for HTTP 500, got nil")
 	}
 }
@@ -134,7 +134,7 @@ func TestWebhookAction_hmacSignature(t *testing.T) {
 		timeout: 5 * time.Second,
 	}
 
-	if err := action.Run(context.Background(), sampleTicket("app")); err != nil {
+	if _, err := action.Run(context.Background(), sampleTicket("app")); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !strings.HasPrefix(sigHeader, "sha256=") {
@@ -153,7 +153,7 @@ func TestCLIAgentAction_argMode(t *testing.T) {
 		promptMode: "arg",
 	}
 
-	if err := action.Run(context.Background(), sampleTicket("app")); err != nil {
+	if _, err := action.Run(context.Background(), sampleTicket("app")); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -169,7 +169,7 @@ func TestCLIAgentAction_stdinMode(t *testing.T) {
 		promptMode: "stdin",
 	}
 
-	if err := action.Run(context.Background(), sampleTicket("app")); err != nil {
+	if _, err := action.Run(context.Background(), sampleTicket("app")); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -181,7 +181,7 @@ func TestCLIAgentAction_nonZeroExit_returnsError(t *testing.T) {
 		promptMode: "arg",
 	}
 
-	if err := action.Run(context.Background(), sampleTicket("app")); err == nil {
+	if _, err := action.Run(context.Background(), sampleTicket("app")); err == nil {
 		t.Error("expected error for non-zero exit, got nil")
 	}
 }
@@ -200,7 +200,7 @@ func TestCLIAgentAction_promptTemplateRendered(t *testing.T) {
 	}
 
 	ticket := sampleTicket("app")
-	if err := action.Run(context.Background(), ticket); err != nil {
+	if _, err := action.Run(context.Background(), ticket); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

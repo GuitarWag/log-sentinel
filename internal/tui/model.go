@@ -198,6 +198,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.refreshWorkerVP()
+		if m.showDetail && m.activeTab == 2 {
+			filtered := m.filteredTickets()
+			if m.ticketCursor < len(filtered) {
+				t := filtered[m.ticketCursor]
+				if t.ID == e.TicketID {
+					m.detailVP.SetContent(m.renderDetailContent(t))
+				}
+			}
+		}
 		cmds = append(cmds, waitForWorkerEvent(m.ctx, m.workerEvCh))
 	}
 
@@ -527,6 +536,22 @@ func (m *Model) renderDetailContent(t *store.Ticket) string {
 				statusStr = styleWorkerFailed.Render("✗ failed")
 			}
 			sb.WriteString("  " + ts + "  " + statusStr + "  " + e.ActionName + "\n")
+		}
+
+		var lastOutput string
+		for i := len(events) - 1; i >= 0; i-- {
+			if events[i].Status == "done" && events[i].Output != "" {
+				lastOutput = events[i].Output
+				break
+			}
+		}
+		if lastOutput != "" {
+			sb.WriteString("\n")
+			sb.WriteString(stylePanelTitle.Render("  Agent Output") + "\n")
+			for _, line := range strings.SplitAfter(lastOutput, "\n") {
+				sb.WriteString("  " + styleWorkerDone.Render(line))
+			}
+			sb.WriteString("\n")
 		}
 	} else {
 		sb.WriteString(styleTimestamp.Render("  No worker activity for this ticket yet.") + "\n")

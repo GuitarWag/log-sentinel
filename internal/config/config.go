@@ -40,6 +40,8 @@ type AppConfig struct {
 	Region        string `yaml:"region"`
 	LogGroup      string `yaml:"log_group"`
 	FilterPattern string `yaml:"filter_pattern"`
+
+	LogFile string `yaml:"log_file"`
 }
 
 type AWSConfig struct {
@@ -121,8 +123,11 @@ func (c *Config) validate() error {
 		if app.Name == "" {
 			return fmt.Errorf("application[%d]: name is required", i)
 		}
-		if app.Source != "gcp" && app.Source != "aws" && app.Source != "mock" {
-			return fmt.Errorf("application %q: source must be 'gcp', 'aws', or 'mock', got %q", app.Name, app.Source)
+		if app.Source != "gcp" && app.Source != "aws" && app.Source != "mock" && app.Source != "file" {
+			return fmt.Errorf("application %q: source must be 'gcp', 'aws', 'mock', or 'file', got %q", app.Name, app.Source)
+		}
+		if app.Source == "file" && app.LogFile == "" {
+			return fmt.Errorf("application %q (file): log_file is required", app.Name)
 		}
 		if app.Source == "gcp" && app.Project == "" {
 			return fmt.Errorf("application %q (gcp): project is required", app.Name)
@@ -130,7 +135,7 @@ func (c *Config) validate() error {
 		if app.Source == "aws" && app.LogGroup == "" {
 			return fmt.Errorf("application %q (aws): log_group is required", app.Name)
 		}
-		if app.Source != "mock" {
+		if app.Source != "mock" && app.Source != "file" {
 			allMock = false
 		}
 	}

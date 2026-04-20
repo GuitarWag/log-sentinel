@@ -21,7 +21,7 @@ import (
 )
 
 type Action interface {
-	Run(ctx context.Context, ticket *Ticket) error
+	Run(ctx context.Context, ticket *Ticket) (string, error)
 	Name() string
 }
 
@@ -68,10 +68,10 @@ func (a *WebhookAction) Name() string {
 	return "webhook:" + a.cfg.URL
 }
 
-func (a *WebhookAction) Run(ctx context.Context, ticket *Ticket) error {
+func (a *WebhookAction) Run(ctx context.Context, ticket *Ticket) (string, error) {
 	body, err := json.Marshal(ticket)
 	if err != nil {
-		return fmt.Errorf("marshaling ticket: %w", err)
+		return "", fmt.Errorf("marshaling ticket: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
@@ -79,7 +79,7 @@ func (a *WebhookAction) Run(ctx context.Context, ticket *Ticket) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.URL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("building request: %w", err)
+		return "", fmt.Errorf("building request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -95,17 +95,17 @@ func (a *WebhookAction) Run(ctx context.Context, ticket *Ticket) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST %s: %w", a.cfg.URL, err)
+		return "", fmt.Errorf("POST %s: %w", a.cfg.URL, err)
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
 	}
 
 	slog.Info("webhook delivered", "action", a.Name(), "status", resp.StatusCode)
-	return nil
+	return fmt.Sprintf("HTTP %d", resp.StatusCode), nil
 }
 
 const defaultPromptTemplate = `You are a software engineer investigating a production error.
@@ -137,10 +137,10 @@ func (a *CLIAgentAction) Name() string {
 	return "cli_agent:" + a.cfg.Command
 }
 
-func (a *CLIAgentAction) Run(ctx context.Context, ticket *Ticket) error {
+func (a *CLIAgentAction) Run(ctx context.Context, ticket *Ticket) (string, error) {
 	prompt, err := a.renderPrompt(ticket)
 	if err != nil {
-		return fmt.Errorf("rendering prompt: %w", err)
+		return "", fmt.Errorf("rendering prompt: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
@@ -186,11 +186,12 @@ func (a *CLIAgentAction) Run(ctx context.Context, ticket *Ticket) error {
 
 	if err := cmd.Run(); err != nil {
 		output := truncate(out.String(), 500)
-		return fmt.Errorf("cli agent exited with error: %w\noutput: %s", err, output)
+		return "", fmt.Errorf("cli agent exited with error: %w\noutput: %s", err, output)
 	}
 
+	output := strings.TrimSpace(out.String())
 	slog.Info("cli agent completed", "action", a.Name(), "output_bytes", out.Len())
-	return nil
+	return output, nil
 }
 
 func (a *CLIAgentAction) renderPrompt(ticket *Ticket) (string, error) {

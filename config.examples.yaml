@@ -1,0 +1,126 @@
+poll_interval: 20s
+
+mock:
+  use_rule_classifier: true
+
+aws:
+  region: us-east-1
+  bedrock_model: amazon.nova-micro-v1:0
+  endpoint_url: http://localhost:4566
+  sqs_queue_url: http://localhost:4566/000000000000/log-sentinel
+
+applications:
+  - name: checkout-ui
+    source: file
+    log_file: ./examples/checkout-ui/errors.log
+    poll_interval: 15s
+
+  - name: dashboard-ui
+    source: file
+    log_file: ./examples/dashboard-ui/errors.log
+    poll_interval: 20s
+
+  - name: auth-ui
+    source: file
+    log_file: ./examples/auth-ui/errors.log
+    poll_interval: 25s
+
+workers:
+  - app: checkout-ui
+    concurrency: 1
+    actions:
+      - type: cli_agent
+        name: claude-fix
+        command: claude
+        args:
+          - "--print"
+          - "--dangerously-skip-permissions"
+        prompt_mode: arg
+        working_dir: ./examples/checkout-ui
+        timeout: 120s
+        prompt_template: |
+          You are a software engineer fixing a bug in the React application in the current directory.
+
+          Application: {{.AppName}}
+          Component:   {{.Component}}
+          Severity:    {{.Severity}}
+          Error type:  {{.Classification}}
+
+          Error fingerprint:
+          {{.FingerprintText}}
+
+          Raw log line:
+          {{.RawLog}}
+
+          Instructions:
+          1. Read the error above and identify the exact file and line to fix.
+          2. Fix ONLY the specific bug described — do not refactor surrounding code.
+          3. Do NOT run git add, git commit, git push, or any git command.
+          4. Do NOT install npm packages or modify package.json.
+          5. After applying the fix, print one line: "Fixed: <brief description of what changed>"
+
+  - app: dashboard-ui
+    concurrency: 1
+    actions:
+      - type: cli_agent
+        name: claude-fix
+        command: claude
+        args:
+          - "--print"
+          - "--dangerously-skip-permissions"
+        prompt_mode: arg
+        working_dir: ./examples/dashboard-ui
+        timeout: 120s
+        prompt_template: |
+          You are a software engineer fixing a bug in the React application in the current directory.
+
+          Application: {{.AppName}}
+          Component:   {{.Component}}
+          Severity:    {{.Severity}}
+          Error type:  {{.Classification}}
+
+          Error fingerprint:
+          {{.FingerprintText}}
+
+          Raw log line:
+          {{.RawLog}}
+
+          Instructions:
+          1. Read the error above and identify the exact file and line to fix.
+          2. Fix ONLY the specific bug described — do not refactor surrounding code.
+          3. Do NOT run git add, git commit, git push, or any git command.
+          4. Do NOT install npm packages or modify package.json.
+          5. After applying the fix, print one line: "Fixed: <brief description of what changed>"
+
+  - app: auth-ui
+    concurrency: 1
+    actions:
+      - type: cli_agent
+        name: claude-fix
+        command: claude
+        args:
+          - "--print"
+          - "--dangerously-skip-permissions"
+        prompt_mode: arg
+        working_dir: ./examples/auth-ui
+        timeout: 120s
+        prompt_template: |
+          You are a software engineer fixing a bug in the React application in the current directory.
+
+          Application: {{.AppName}}
+          Component:   {{.Component}}
+          Severity:    {{.Severity}}
+          Error type:  {{.Classification}}
+
+          Error fingerprint:
+          {{.FingerprintText}}
+
+          Raw log line:
+          {{.RawLog}}
+
+          Instructions:
+          1. Read the error above and identify the exact file and line to fix.
+          2. Fix ONLY the specific bug described — do not refactor surrounding code.
+          3. Do NOT run git add, git commit, git push, or any git command.
+          4. Do NOT install npm packages or modify package.json.
+          5. After applying the fix, print one line: "Fixed: <brief description of what changed>"

@@ -32,6 +32,7 @@ type Event struct {
 	Severity       string
 	Status         string
 	ErrMsg         string
+	Output         string
 	Timestamp      time.Time
 }
 
@@ -170,7 +171,8 @@ func (w *Worker) process(ctx context.Context, log *slog.Logger, msg sqstypes.Mes
 			Status:         "processing",
 			Timestamp:      time.Now(),
 		})
-		if err := action.Run(ctx, ticket); err != nil {
+		output, err := action.Run(ctx, ticket)
+		if err != nil {
 			log.Error("action failed, leaving message for redelivery",
 				"action", action.Name(),
 				"error", err,
@@ -198,6 +200,7 @@ func (w *Worker) process(ctx context.Context, log *slog.Logger, msg sqstypes.Mes
 			Classification: ticket.Classification,
 			Severity:       ticket.Severity,
 			Status:         "done",
+			Output:         output,
 			Timestamp:      time.Now(),
 		})
 		log.Info("action completed", "action", action.Name())
